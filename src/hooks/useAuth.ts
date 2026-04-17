@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 
-export const BACKEND_URL = "http://localhost:8000";
+export const BACKEND_URL = "https://34464xv038.execute-api.ap-south-1.amazonaws.com/prod";
 const STORAGE_KEY = "farmgate_auth";       // Microsoft SSO key — untouched
 const JWT_KEY     = "farmgate_jwt";        // Email/password JWT
 const USER_KEY    = "farmgate_user";       // Email/password user
