@@ -9,56 +9,27 @@ import Forecasting from "./pages/Forecasting";
 import POTracking from "./pages/POTracking";
 import DashboardLayout from "./components/DashboardLayout";
 import NotFound from "./pages/NotFound";
-import DataSources from "./pages/DataSources";
-import { DataProvider } from "./context/DataContext";
+
 const queryClient = new QueryClient();
 
-// const App = () => (
-//   <QueryClientProvider client={queryClient}>
-//     <TooltipProvider>
-//       <Toaster />
-//       <Sonner />
-//       <BrowserRouter>
-//         <Routes>
-//           <Route path="/" element={<Login />} />
-//           <Route element={<DashboardLayout />}>
-//             <Route path="/data-sources" element={<DataSources />} />
-//             <Route path="/dashboard" element={<Dashboard />} />
-//             <Route path="/forecasting" element={<Forecasting />} />
-//             <Route path="/po-tracking" element={<POTracking />} />
-//           </Route>
-//           <Route path="*" element={<NotFound />} />
-//         </Routes>
-//       </BrowserRouter>
-//     </TooltipProvider>
-//   </QueryClientProvider>
-// );
-
-
-function App() {
-  return (
-    <DataProvider>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Login />} />
-              <Route element={<DashboardLayout />}>
-                <Route path="/data-sources" element={<DataSources />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/forecasting" element={<Forecasting />} />
-                <Route path="/po-tracking" element={<POTracking />} />
-              </Route>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </DataProvider>
-  );
-}
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route element={<DashboardLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/forecasting" element={<Forecasting />} />
+            <Route path="/po-tracking" element={<POTracking />} />
+          </Route>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
 
 export default App;
-

@@ -11,6 +11,13 @@ export default defineConfig(({ mode }) => ({
     // hmr: {
     //   overlay: false,
     // },
+    proxy: {
+      '/lambda': {
+        target: 'https://34464xv038.execute-api.ap-south-1.amazonaws.com/prod',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/lambda/, '')
+      }
+    }
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
@@ -20,3 +27,5 @@ export default defineConfig(({ mode }) => ({
     // dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
   },
 }));
+
+

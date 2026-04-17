@@ -1,5 +1,9 @@
 import { LayoutDashboard, TrendingUp, ClipboardList, Sprout, LogOut } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+
+// Add this line with your other imports
+import { logout } from "@/hooks/useAuth";
+
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Sidebar,
@@ -15,7 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 
 const items = [
-  { title: "Data Sources", url: "/data-sources", icon: LayoutDashboard},
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Forecasting", url: "/forecasting", icon: TrendingUp },
   { title: "PO Tracking", url: "/po-tracking", icon: ClipboardList },
@@ -27,10 +30,14 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    navigate("/");
-  };
+  // const handleLogout = () => {
+  //   navigate("/");
+  // };
 
+
+  const handleLogout = () => {
+  logout();
+};
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
