@@ -19,13 +19,14 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Fetch OneLake data immediately on app start — NOT on dashboard visit
+  // const API_BASE = "http://65.0.54.48:8000";
   useEffect(() => {
     const fetchDefaultData = async () => {
       setIsLoading(true);
       setFetchError(null);
       try {
         const res = await fetch(
-          "http://localhost:8000/dashboard/data/onelake?buyer_table=buyers&seller_table=sellers"
+          "http://65.0.54.48:8000/dashboard/data/onelake?buyer_table=buyers&seller_table=sellers"
         );
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

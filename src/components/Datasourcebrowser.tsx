@@ -4,7 +4,8 @@ import {
   HardDrive, Layers, Loader2, AlertCircle, Database, Info, Search,
 } from "lucide-react";
 
-const API_BASE = "http://localhost:8000";
+// const API_BASE = "http://localhost:8000";
+const API_BASE = "http://65.0.54.48:8000";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
