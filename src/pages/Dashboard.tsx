@@ -1,9 +1,4 @@
-
-
 import { useState, useMemo, useEffect } from "react";
-// Add this import
-import { useAuth, logout } from "@/hooks/useAuth";
-//const { user,loading: authLoading } = useAuth();
 import SummaryCard from "@/components/SummaryCard";
 import {
   Users,
@@ -12,7 +7,7 @@ import {
   ShoppingCart,
   AlertTriangle,
   ArrowUpRight,
-  ArrowDownRight,
+  Database,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -33,28 +28,17 @@ import {
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  ComposedChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
   Legend,
+  Tooltip,
+  ResponsiveContainer,
 } from "recharts";
+import { useData } from "@/context/DataContext";
 
-const TYPE_COLORS: Record<string, string> = {
-  Organic: "#10b981",
-  Premium: "#14b8a6",
-  Desi: "#eab308",
-  Standard: "#6366f1",
-};
 
-// ==================== TYPES ====================
+// ================= TYPES =================
 type Transaction = {
   id: string;
   commodity: string;
@@ -66,61 +50,54 @@ type Transaction = {
   region: string;
 };
 
-type AggregatedEntity = {
-  id: string;
-  commodity: string;
-  type: string;
-  region: string;
-  quantity: number;
-  lastTransaction: string;
+// ================= HELPERS =================
+const TYPE_COLORS: Record<string, string> = {
+  Organic: "#10b981",
+  Premium: "#14b8a6",
+  Desi: "#eab308",
+  Standard: "#6366f1",
 };
 
-// ==================== CSV PARSER ====================
-const parseCSV = (
-  csvText: string,
+const SOURCE_LABELS: Record<string, string> = {
+  onelake: "OneLake (default)",
+  onelake_custom: "OneLake (custom)",   // ← add this
+  local: "Local Upload",
+  s3: "AWS S3",
+  adls: "Azure ADLS",
+};
+
+const rowToTransaction = (
+  row: Record<string, any>,
   idField: "seller_id" | "buyer_id",
-): Transaction[] => {
-  const lines = csvText.trim().split("\n");
-  if (lines.length < 2) return [];
-
-  const headers = lines[0]
-    .split(",")
-    .map((h) => h.trim().replace("\r", "").toLowerCase());
-
-  const data: Transaction[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(",");
-    const row: any = {};
-
-    headers.forEach((header, idx) => {
-      let val = values[idx]?.trim().replace("\r", "") || "";
-
-      if (header === "quantity" || header === "price") {
-        row[header] = parseFloat(val) || 0;
-      } else if (header === idField) {
-        row.id = val;
-      } else if (header === "year") {
-        row.year = val;
-      } else {
-        row[header] = val;
-      }
-    });
-
-    if (row.id && row.commodity) {
-      row.region = row.region || "Unknown";
-      row.year = row.year || "";
-      data.push(row as Transaction);
+): Transaction | null => {
+  const get = (keys: string[]) => {
+    for (const k of keys) {
+      if (row[k] !== undefined && row[k] !== null) return String(row[k]);
     }
-  }
+    return "";
+  };
 
-  return data;
+  const id = get([idField, idField.toUpperCase(), "id"]);
+  const commodity = get(["commodity", "Commodity"]).toLowerCase();
+  if (!id || !commodity) return null;
+
+  return {
+    id,
+    commodity,
+    type: get(["type", "Type"]) || "Standard",
+    date: get(["date", "Date", "transaction_date"]),
+    year:
+      get(["year", "Year"]) ||
+      get(["date", "Date"]).split("-").pop() ||
+      "",
+    quantity: parseFloat(get(["quantity", "Quantity"]) || "0") || 0,
+    price: parseFloat(get(["price", "Price"]) || "0") || 0,
+    region: get(["region", "Region"]) || "Unknown",
+  };
 };
 
-// ==================== ROBUST QUARTER PARSER (handles both DD-MM-YYYY and MM-DD-YYYY) ====================
 const getQuarterPeriod = (dateStr: string): string => {
   if (!dateStr) return "Unknown";
-
   const parts = dateStr.split("-");
   if (parts.length !== 3) return "Unknown";
 
@@ -128,7 +105,6 @@ const getQuarterPeriod = (dateStr: string): string => {
   let day = parseInt(parts[0]);
   const year = parseInt(parts[2]);
 
-  // If second part > 12 → it's MM-DD-YYYY format → swap
   if (month > 12) {
     const temp = month;
     month = day;
@@ -136,59 +112,67 @@ const getQuarterPeriod = (dateStr: string): string => {
   }
 
   let quarter: number;
-  if (month >= 1 && month <= 3) quarter = 1;
-  else if (month >= 4 && month <= 6) quarter = 2;
-  else if (month >= 7 && month <= 9) quarter = 3;
+  if (month <= 3) quarter = 1;
+  else if (month <= 6) quarter = 2;
+  else if (month <= 9) quarter = 3;
   else quarter = 4;
 
   return `${year} Q${quarter}`;
 };
 
-// ==================== DASHBOARD ====================
+// ================= DASHBOARD =================
 const Dashboard = () => {
+  // Pull data + loading state from context (fetched at app start)
+  const { data, activeSource, isLoading, fetchError } = useData();
+
   const [rawSellers, setRawSellers] = useState<Transaction[]>([]);
   const [rawBuyers, setRawBuyers] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
-  const [commodity, setCommodity] = useState<string>("chilli");
-  const [quarter, setQuarter] = useState<string>("all");
-  const [year, setYear] = useState<string>("all");
-  const [region, setRegion] = useState<string>("all");
-  const [selectedSeller, setSelectedSeller] = useState<string>("all");
-  const [selectedBuyer, setSelectedBuyer] = useState<string>("all");
+  const [commodity, setCommodity] = useState("");
+  const [region, setRegion] = useState("all");
+  const [year, setYear] = useState("all");
+  const [quarter, setQuarter] = useState("all");
+  const [selectedSeller, setSelectedSeller] = useState("all");
+  const [selectedBuyer, setSelectedBuyer] = useState("all");
 
-  const SELLERS_S3_URL =
-    "https://demand-forecasting-agri.s3.ap-south-1.amazonaws.com/data/sellers.csv";
-  const BUYERS_S3_URL =
-    "https://demand-forecasting-agri.s3.ap-south-1.amazonaws.com/data/buyers.csv";
+  // Derive the human-readable label for the active source
+  const sourceLabel = SOURCE_LABELS[activeSource] ?? activeSource.toUpperCase();
+
+  // Whenever context data changes, parse it into Transaction arrays
+  useEffect(() => {
+    if (!data) return;
+
+    try {
+      const sellers = (data.seller?.rows || [])
+        .map((r: any) => rowToTransaction(r, "seller_id"))
+        .filter(Boolean) as Transaction[];
+
+      const buyers = (data.buyer?.rows || [])
+        .map((r: any) => rowToTransaction(r, "buyer_id"))
+        .filter(Boolean) as Transaction[];
+
+      setRawSellers(sellers);
+      setRawBuyers(buyers);
+      setParseError(null);
+    } catch (err: any) {
+      setParseError("Failed to process data: " + (err.message || "unknown error"));
+    }
+  }, [data]);
+
+  // Auto-select first commodity when data loads
+  const commoditiesList = useMemo(
+    () => Array.from(new Set(rawSellers.map((s) => s.commodity))).sort(),
+    [rawSellers],
+  );
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [sRes, bRes] = await Promise.all([
-          fetch(SELLERS_S3_URL),
-          fetch(BUYERS_S3_URL),
-        ]);
-        if (!sRes.ok || !bRes.ok) throw new Error("Failed to fetch CSV files");
+    if (commoditiesList.length > 0 && !commoditiesList.includes(commodity)) {
+      setCommodity(commoditiesList[0]);
+    }
+  }, [commoditiesList]);
 
-        const sellersText = await sRes.text();
-        const buyersText = await bRes.text();
-
-        setRawSellers(parseCSV(sellersText, "seller_id"));
-        setRawBuyers(parseCSV(buyersText, "buyer_id"));
-      } catch (err: any) {
-        setError(err.message || "Failed to load data from S3");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  // Unified period aggregation (works for "all" + specific year/quarter)
+  // ── Aggregation ─────────────────────────────────────────────────────────────
   const getPeriodAggregated = (
     rawData: Transaction[],
     comm: string,
@@ -196,17 +180,12 @@ const Dashboard = () => {
     selectedQuarter: string,
   ) => {
     const map = new Map<string, any>();
-
     rawData.forEach((tx) => {
       if (tx.commodity !== comm) return;
-
       const period = getQuarterPeriod(tx.date);
       const quarterPart = period.split(" ")[1];
-
-      // Apply filters only when not "all"
       if (selectedYear !== "all" && tx.year !== selectedYear) return;
       if (selectedQuarter !== "all" && quarterPart !== selectedQuarter) return;
-
       const key = `${tx.id}-${tx.commodity}-${tx.type}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -218,59 +197,52 @@ const Dashboard = () => {
           dates: [],
         });
       }
-
       const entry = map.get(key);
       entry.quantity += tx.quantity;
       entry.dates.push(tx.date);
     });
-
-    return Array.from(map.values()).map((entry) => ({
-      ...entry,
-      lastTransaction: entry.dates.sort().pop() || "",
+    return Array.from(map.values()).map((e) => ({
+      ...e,
+      lastTransaction: e.dates.sort().pop() || "",
     }));
   };
 
-  const periodSellers = useMemo(() => {
-    return getPeriodAggregated(rawSellers, commodity, year, quarter);
-  }, [rawSellers, commodity, year, quarter]);
+  const periodSellers = useMemo(
+    () => getPeriodAggregated(rawSellers, commodity, year, quarter),
+    [rawSellers, commodity, year, quarter],
+  );
+  const periodBuyers = useMemo(
+    () => getPeriodAggregated(rawBuyers, commodity, year, quarter),
+    [rawBuyers, commodity, year, quarter],
+  );
 
-  const periodBuyers = useMemo(() => {
-    return getPeriodAggregated(rawBuyers, commodity, year, quarter);
-  }, [rawBuyers, commodity, year, quarter]);
+  const filteredSellers = useMemo(
+    () => (region === "all" ? periodSellers : periodSellers.filter((s) => s.region === region)),
+    [periodSellers, region],
+  );
+  const filteredBuyers = useMemo(
+    () => (region === "all" ? periodBuyers : periodBuyers.filter((b) => b.region === region)),
+    [periodBuyers, region],
+  );
 
-  const filteredSellers = useMemo(() => {
-    let list = periodSellers;
-    if (region !== "all") list = list.filter((s) => s.region === region);
-    return list;
-  }, [periodSellers, region]);
+  const availableSellerIds = useMemo(
+    () => Array.from(new Set(filteredSellers.map((s) => s.id))).sort(),
+    [filteredSellers],
+  );
+  const availableBuyerIds = useMemo(
+    () => Array.from(new Set(filteredBuyers.map((b) => b.id))).sort(),
+    [filteredBuyers],
+  );
 
-  const filteredBuyers = useMemo(() => {
-    let list = periodBuyers;
-    if (region !== "all") list = list.filter((b) => b.region === region);
-    return list;
-  }, [periodBuyers, region]);
-
-  // Unique IDs for dropdowns (no duplicates)
-  const availableSellerIds = useMemo(() => {
-    return Array.from(new Set(filteredSellers.map((s) => s.id))).sort();
-  }, [filteredSellers]);
-
-  const availableBuyerIds = useMemo(() => {
-    return Array.from(new Set(filteredBuyers.map((b) => b.id))).sort();
-  }, [filteredBuyers]);
-
-  // Reset selected ID if it becomes invalid after filter change
   useEffect(() => {
-    if (selectedSeller !== "all" && !availableSellerIds.includes(selectedSeller)) {
+    if (selectedSeller !== "all" && !availableSellerIds.includes(selectedSeller))
       setSelectedSeller("all");
-    }
-  }, [availableSellerIds, selectedSeller]);
+  }, [availableSellerIds]);
 
   useEffect(() => {
-    if (selectedBuyer !== "all" && !availableBuyerIds.includes(selectedBuyer)) {
+    if (selectedBuyer !== "all" && !availableBuyerIds.includes(selectedBuyer))
       setSelectedBuyer("all");
-    }
-  }, [availableBuyerIds, selectedBuyer]);
+  }, [availableBuyerIds]);
 
   const displaySellers = useMemo(
     () =>
@@ -279,7 +251,6 @@ const Dashboard = () => {
         : filteredSellers.filter((s) => s.id === selectedSeller),
     [filteredSellers, selectedSeller],
   );
-
   const displayBuyers = useMemo(
     () =>
       selectedBuyer === "all"
@@ -288,95 +259,51 @@ const Dashboard = () => {
     [filteredBuyers, selectedBuyer],
   );
 
-  // Unique counts for summary cards
   const totalUniqueSellers = useMemo(
     () => new Set(displaySellers.map((s) => s.id)).size,
     [displaySellers],
   );
-
   const totalUniqueBuyers = useMemo(
     () => new Set(displayBuyers.map((b) => b.id)).size,
     [displayBuyers],
   );
-
   const totalSellerQty = displaySellers.reduce((a, s) => a + s.quantity, 0);
   const totalBuyerQty = displayBuyers.reduce((a, b) => a + b.quantity, 0);
 
-  // Dynamic Type Breakdown for Pie Charts
   const sellerTypeBreakdown = useMemo(() => {
-    const breakdown: Record<string, number> = {};
+    const bd: Record<string, number> = {};
     displaySellers.forEach((s) => {
-      breakdown[s.type] = (breakdown[s.type] || 0) + s.quantity;
+      bd[s.type] = (bd[s.type] || 0) + s.quantity;
     });
-    return Object.entries(breakdown)
+    return Object.entries(bd)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [displaySellers]);
 
   const buyerTypeBreakdown = useMemo(() => {
-    const breakdown: Record<string, number> = {};
+    const bd: Record<string, number> = {};
     displayBuyers.forEach((b) => {
-      breakdown[b.type] = (breakdown[b.type] || 0) + b.quantity;
+      bd[b.type] = (bd[b.type] || 0) + b.quantity;
     });
-    return Object.entries(breakdown)
+    return Object.entries(bd)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [displayBuyers]);
 
-  // Time Series Data (kept for future use)
-  const supplyTimeData = useMemo(() => {
-    const grouped = new Map<string, Record<string, number>>();
-    rawSellers.forEach((tx) => {
-      if (tx.commodity !== commodity) return;
-      const period = getQuarterPeriod(tx.date);
-      if (!grouped.has(period)) grouped.set(period, {});
-      const entry = grouped.get(period)!;
-      entry[tx.type] = (entry[tx.type] || 0) + tx.quantity;
-    });
-    const sorted = Array.from(grouped.keys()).sort();
-    return sorted.map((period) => ({ period, ...grouped.get(period)! }));
-  }, [rawSellers, commodity]);
-
-  const demandTimeData = useMemo(() => {
-    const grouped = new Map<string, Record<string, number>>();
-    rawBuyers.forEach((tx) => {
-      if (tx.commodity !== commodity) return;
-      const period = getQuarterPeriod(tx.date);
-      if (!grouped.has(period)) grouped.set(period, {});
-      const entry = grouped.get(period)!;
-      entry[tx.type] = (entry[tx.type] || 0) + tx.quantity;
-    });
-    const sorted = Array.from(grouped.keys()).sort();
-    return sorted.map((period) => ({ period, ...grouped.get(period)! }));
-  }, [rawBuyers, commodity]);
-
   const topSellers = useMemo(
-    () =>
-      [...displaySellers].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
+    () => [...displaySellers].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
     [displaySellers],
   );
-
   const topBuyers = useMemo(
-    () =>
-      [...displayBuyers].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
+    () => [...displayBuyers].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
     [displayBuyers],
   );
 
   const gapInsight = useMemo(() => {
     const supplyTotal = displaySellers.reduce((sum, s) => sum + s.quantity, 0);
     const demandTotal = displayBuyers.reduce((sum, b) => sum + b.quantity, 0);
-    return {
-      supplyTotal,
-      demandTotal,
-      gap: supplyTotal - demandTotal,
-    };
+    return { supplyTotal, demandTotal, gap: supplyTotal - demandTotal };
   }, [displaySellers, displayBuyers]);
-
-  // Dropdown lists
-  const commoditiesList = useMemo(
-    () => Array.from(new Set(rawSellers.map((s) => s.commodity))).sort(),
-    [rawSellers],
-  );
 
   const regionsList = useMemo(() => {
     const regs = new Set<string>();
@@ -402,14 +329,7 @@ const Dashboard = () => {
 
   const quartersList = ["Q1", "Q2", "Q3", "Q4"];
 
-  const handleCommodityChange = (val: string) => {
-    setCommodity(val);
-    setSelectedSeller("all");
-    setSelectedBuyer("all");
-  };
-
   const renderPieLabel = ({
-    name,
     value,
     cx,
     cy,
@@ -436,464 +356,488 @@ const Dashboard = () => {
     );
   };
 
-  if (loading)
-    return (
-      <div className="flex h-96 items-center justify-center text-lg">
-        Loading data....
-      </div>
-    );
-  if (error)
-    return (
-      <div className="flex h-96 items-center justify-center text-destructive">
-        {error}
-      </div>
-    );
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold font-display">Dashboard</h1>
           <p className="text-muted-foreground text-sm">
             Live Supply &amp; Demand Overview
           </p>
+          {!isLoading && !fetchError && (
+            <div className="mt-1 flex items-center gap-2">
+              <Database className="w-3 h-3 text-blue-500" />
+              <span className="text-xs text-blue-600 font-medium">
+                {sourceLabel}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Commodity</Label>
-            <Select value={commodity} onValueChange={handleCommodityChange}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Select commodity" />
-              </SelectTrigger>
-              <SelectContent>
-                {commoditiesList.map((c) => {
-                  const displayName =
-                    c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
-                  return (
+        {/* Filters — only show when data is ready */}
+        {!isLoading && !fetchError && !parseError && (
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Commodity</Label>
+              <Select
+                value={commodity}
+                onValueChange={(v) => {
+                  setCommodity(v);
+                  setSelectedSeller("all");
+                  setSelectedBuyer("all");
+                }}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Select commodity" />
+                </SelectTrigger>
+                <SelectContent>
+                  {commoditiesList.map((c) => (
                     <SelectItem key={c} value={c}>
-                      {displayName}
+                      {c.charAt(0).toUpperCase() + c.slice(1).toLowerCase()}
                     </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Region</Label>
-            <Select value={region} onValueChange={setRegion}>
-              <SelectTrigger className="w-44">
-                <SelectValue placeholder="All Regions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Regions</SelectItem>
-                {regionsList.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Year</Label>
-            <Select value={year} onValueChange={setYear}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="All Years" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Years</SelectItem>
-                {yearsList.map((y) => (
-                  <SelectItem key={y} value={y}>
-                    {y}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Quarter</Label>
-            <Select value={quarter} onValueChange={setQuarter}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="All Quarters" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Quarters</SelectItem>
-                {quartersList.map((q) => (
-                  <SelectItem key={q} value={q}>
-                    {q}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
-
-      {/* Gap Insight */}
-      <Card
-        className="shadow-card border-l-4"
-        style={{
-          borderLeftColor:
-            gapInsight.gap >= 0 ? "hsl(152, 60%, 40%)" : "hsl(0, 72%, 51%)",
-        }}
-      >
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-warning" />
-              <span className="font-semibold font-display text-sm">
-                Demand-Supply Insight
-              </span>
-              <Badge variant="outline" className="text-xs">
-                {commodity.charAt(0).toUpperCase() + commodity.slice(1).toLowerCase()} · {region === "all" ? "All Regions" : region}
-              </Badge>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <span className="flex items-center gap-1">
-                <ArrowUpRight className="w-4 h-4 text-supply" />
-                Supply:{" "}
-                <strong>{gapInsight.supplyTotal.toLocaleString()} Qt</strong>
-              </span>
-              <span className="flex items-center gap-1">
-                Demand:{" "}
-                <strong>{gapInsight.demandTotal.toLocaleString()} Qt</strong>
-              </span>
-              <span className="font-medium">
-                {gapInsight.gap >= 0 ? (
-                  <span className="text-supply">
-                    Surplus of {gapInsight.gap.toLocaleString()} Qt
-                  </span>
-                ) : (
-                  <span className="text-destructive">
-                    Shortage of {Math.abs(gapInsight.gap).toLocaleString()} Qt
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Supply Side */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold font-display text-supply flex items-center gap-2">
-              <Package className="w-5 h-5" /> Sellers (Supply)
-            </h2>
             <div className="space-y-1">
-              <Label className="text-xs font-medium">Seller</Label>
-              <Select value={selectedSeller} onValueChange={setSelectedSeller}>
+              <Label className="text-xs font-medium">Region</Label>
+              <Select value={region} onValueChange={setRegion}>
                 <SelectTrigger className="w-44">
-                  <SelectValue placeholder="All Sellers" />
+                  <SelectValue placeholder="All Regions" />
                 </SelectTrigger>
-                <SelectContent className="h-64">
-                  <SelectItem value="all">All Sellers</SelectItem>
-                  {availableSellerIds.map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {id}
+                <SelectContent>
+                  <SelectItem value="all">All Regions</SelectItem>
+                  {regionsList.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Year</Label>
+              <Select value={year} onValueChange={setYear}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="All Years" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {yearsList.map((y) => (
+                    <SelectItem key={y} value={y}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Quarter</Label>
+              <Select value={quarter} onValueChange={setQuarter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="All Quarters" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Quarters</SelectItem>
+                  {quartersList.map((q) => (
+                    <SelectItem key={q} value={q}>
+                      {q}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
+        )}
+      </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <SummaryCard
-              title="Total Sellers"
-              value={totalUniqueSellers}
-              icon={Users}
-            />
-            <SummaryCard
-              title="Total Quantity"
-              value={`${totalSellerQty.toLocaleString()} Qt`}
-              icon={Package}
-            />
-          </div>
-
-          {/* Type Split */}
-          <Card className="shadow-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Type Split (Sellers)</CardTitle>
-            </CardHeader>
-            <CardContent className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={sellerTypeBreakdown}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={90}
-                    labelLine={false}
-                    label={renderPieLabel}
-                  >
-                    {sellerTypeBreakdown.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={TYPE_COLORS[entry.name] || "#64748b"}
-                      />
-                    ))}
-                  </Pie>
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    iconType="circle"
-                  />
-                  <Tooltip
-                    formatter={(value: number) => value.toLocaleString()}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Top Sellers */}
-          {/* <Card className="shadow-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Top Sellers by Quantity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {topSellers.map((s, i) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between p-2 rounded-lg bg-secondary/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-muted-foreground w-5">
-                        {i + 1}
-                      </span>
-                      <span className="font-medium text-sm">{s.id}</span>
-                      <Badge variant="outline" className="text-[10px]">
-                        {s.type}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {s.region}
-                      </Badge>
-                    </div>
-                    <span className="text-sm font-semibold">
-                      {s.quantity.toFixed(2)} Qt
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card> */}
-          <Card className="shadow-card">
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Top Sellers by Quantity</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {topSellers.map((s, i) => (
-                  <div key={s.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-muted-foreground w-5">{i + 1}</span>
-                      <span className="font-medium text-sm">{s.id}</span>
-                      <Badge variant="outline" className="text-[10px]">{s.type}</Badge>
-                      <Badge variant="secondary" className="text-[10px]">{s.region}</Badge>
-                    </div>
-                    <span className="text-sm font-semibold">{s.quantity.toFixed(2)} Qt</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Seller Records</CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-auto max-h-64">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Region</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Last Txn</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displaySellers.map((s) => (
-                    <TableRow key={`${s.id}-${s.type}`}>
-                      <TableCell className="font-medium">{s.id}</TableCell>
-                      <TableCell>
-                        <span className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground">
-                          {s.type}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs">{s.region}</TableCell>
-                      <TableCell className="font-medium">
-                        {s.quantity.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {s.lastTransaction}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+      {/* Loading state */}
+      {isLoading && (
+        <div className="flex h-64 items-center justify-center text-lg text-muted-foreground">
+          Loading data from OneLake…
         </div>
+      )}
 
-        {/* Demand Side */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold font-display text-demand flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" /> Buyers (Demand)
-            </h2>
-            <div className="space-y-1">
-              <Label className="text-xs font-medium">Buyer</Label>
-              <Select value={selectedBuyer} onValueChange={setSelectedBuyer}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="All Buyers" />
-                </SelectTrigger>
-                <SelectContent className="h-64">
-                  <SelectItem value="all">All Buyers</SelectItem>
-                  {availableBuyerIds.map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      {/* Fetch error */}
+      {!isLoading && fetchError && (
+        <div className="flex h-64 items-center justify-center text-destructive text-center px-6">
+          <div>
+            <p className="font-semibold mb-2">Failed to load data</p>
+            <p className="text-sm">{fetchError}</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Make sure the backend is running on <code>http://localhost:8000</code>, then reload the page.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Parse error */}
+      {!isLoading && !fetchError && parseError && (
+        <div className="flex h-64 items-center justify-center text-destructive text-center px-6">
+          {parseError}
+        </div>
+      )}
+
+      {/* Main content — only when data is ready and parsed */}
+      {!isLoading && !fetchError && !parseError && (
+        <>
+          {/* Gap Insight */}
+          <Card
+            className="shadow-card border-l-4"
+            style={{
+              borderLeftColor:
+                gapInsight.gap >= 0 ? "hsl(152, 60%, 40%)" : "hsl(0, 72%, 51%)",
+            }}
+          >
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-warning" />
+                  <span className="font-semibold font-display text-sm">
+                    Demand-Supply Insight
+                  </span>
+                  <Badge variant="outline" className="text-xs">
+                    {commodity.charAt(0).toUpperCase() +
+                      commodity.slice(1).toLowerCase()}{" "}
+                    · {region === "all" ? "All Regions" : region}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1">
+                    <ArrowUpRight className="w-4 h-4 text-supply" />
+                    Supply:{" "}
+                    <strong>{gapInsight.supplyTotal.toLocaleString()} Qt</strong>
+                  </span>
+                  <span>
+                    Demand:{" "}
+                    <strong>{gapInsight.demandTotal.toLocaleString()} Qt</strong>
+                  </span>
+                  <span className="font-medium">
+                    {gapInsight.gap >= 0 ? (
+                      <span className="text-supply">
+                        Surplus of {gapInsight.gap.toLocaleString()} Qt
+                      </span>
+                    ) : (
+                      <span className="text-destructive">
+                        Shortage of {Math.abs(gapInsight.gap).toLocaleString()} Qt
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* ── Supply Side ── */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold font-display text-supply flex items-center gap-2">
+                  <Package className="w-5 h-5" /> Sellers (Supply)
+                </h2>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Seller</Label>
+                  <Select
+                    value={selectedSeller}
+                    onValueChange={setSelectedSeller}
+                  >
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="All Sellers" />
+                    </SelectTrigger>
+                    <SelectContent className="h-64">
+                      <SelectItem value="all">All Sellers</SelectItem>
+                      {availableSellerIds.map((id) => (
+                        <SelectItem key={id} value={id}>
+                          {id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <SummaryCard
+                  title="Total Sellers"
+                  value={totalUniqueSellers}
+                  icon={Users}
+                />
+                <SummaryCard
+                  title="Total Quantity"
+                  value={`${totalSellerQty.toLocaleString()} Qt`}
+                  icon={Package}
+                />
+              </div>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Type Split (Sellers)</CardTitle>
+                </CardHeader>
+                <CardContent className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={sellerTypeBreakdown}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={90}
+                        labelLine={false}
+                        label={renderPieLabel}
+                      >
+                        {sellerTypeBreakdown.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={TYPE_COLORS[entry.name] || "#64748b"}
+                          />
+                        ))}
+                      </Pie>
+                      <Legend
+                        verticalAlign="bottom"
+                        height={36}
+                        iconType="circle"
+                      />
+                      <Tooltip
+                        formatter={(value: number) => value.toLocaleString()}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">
+                    Top Sellers by Quantity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {topSellers.map((s, i) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-secondary/50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-muted-foreground w-5">
+                            {i + 1}
+                          </span>
+                          <span className="font-medium text-sm">{s.id}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {s.type}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px]">
+                            {s.region}
+                          </Badge>
+                        </div>
+                        <span className="text-sm font-semibold">
+                          {s.quantity.toFixed(2)} Qt
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Seller Records</CardTitle>
+                </CardHeader>
+                <CardContent className="overflow-auto max-h-64">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Region</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Last Txn</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {displaySellers.map((s) => (
+                        <TableRow key={`${s.id}-${s.type}`}>
+                          <TableCell className="font-medium">{s.id}</TableCell>
+                          <TableCell>
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground">
+                              {s.type}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs">{s.region}</TableCell>
+                          <TableCell className="font-medium">
+                            {s.quantity.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">
+                            {s.lastTransaction}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* ── Demand Side ── */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold font-display text-demand flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5" /> Buyers (Demand)
+                </h2>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Buyer</Label>
+                  <Select
+                    value={selectedBuyer}
+                    onValueChange={setSelectedBuyer}
+                  >
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="All Buyers" />
+                    </SelectTrigger>
+                    <SelectContent className="h-64">
+                      <SelectItem value="all">All Buyers</SelectItem>
+                      {availableBuyerIds.map((id) => (
+                        <SelectItem key={id} value={id}>
+                          {id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <SummaryCard
+                  title="Total Buyers"
+                  value={totalUniqueBuyers}
+                  icon={Users}
+                />
+                <SummaryCard
+                  title="Total Quantity"
+                  value={`${totalBuyerQty.toLocaleString()} Qt`}
+                  icon={TrendingUp}
+                />
+              </div>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Type Split (Buyers)</CardTitle>
+                </CardHeader>
+                <CardContent className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={buyerTypeBreakdown}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={90}
+                        labelLine={false}
+                        label={renderPieLabel}
+                      >
+                        {buyerTypeBreakdown.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={TYPE_COLORS[entry.name] || "#64748b"}
+                          />
+                        ))}
+                      </Pie>
+                      <Legend
+                        verticalAlign="bottom"
+                        height={36}
+                        iconType="circle"
+                      />
+                      <Tooltip
+                        formatter={(value: number) => value.toLocaleString()}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">
+                    Top Buyers by Quantity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {topBuyers.map((b, i) => (
+                      <div
+                        key={b.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-secondary/50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-muted-foreground w-5">
+                            {i + 1}
+                          </span>
+                          <span className="font-medium text-sm">{b.id}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {b.type}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px]">
+                            {b.region}
+                          </Badge>
+                        </div>
+                        <span className="text-sm font-semibold">
+                          {b.quantity.toFixed(2)} Qt
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Buyer Records</CardTitle>
+                </CardHeader>
+                <CardContent className="overflow-auto max-h-64">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Region</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Last Txn</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {displayBuyers.map((b) => (
+                        <TableRow key={`${b.id}-${b.type}`}>
+                          <TableCell className="font-medium">{b.id}</TableCell>
+                          <TableCell>
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground">
+                              {b.type}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs">{b.region}</TableCell>
+                          <TableCell className="font-medium">
+                            {b.quantity.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">
+                            {b.lastTransaction}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <SummaryCard
-              title="Total Buyers"
-              value={totalUniqueBuyers}
-              icon={Users}
-            />
-            <SummaryCard
-              title="Total Quantity"
-              value={`${totalBuyerQty.toLocaleString()} Qt`}
-              icon={TrendingUp}
-            />
-          </div>
-
-          {/* Type Split */}
-          <Card className="shadow-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Type Split (Buyers)</CardTitle>
-            </CardHeader>
-            <CardContent className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={buyerTypeBreakdown}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={90}
-                    labelLine={false}
-                    label={renderPieLabel}
-                  >
-                    {buyerTypeBreakdown.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={TYPE_COLORS[entry.name] || "#64748b"}
-                      />
-                    ))}
-                  </Pie>
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    iconType="circle"
-                  />
-                  <Tooltip
-                    formatter={(value: number) => value.toLocaleString()}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Top Buyers */}
-          <Card className="shadow-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Top Buyers by Quantity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {topBuyers.map((b, i) => (
-                  <div
-                    key={b.id}
-                    className="flex items-center justify-between p-2 rounded-lg bg-secondary/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-muted-foreground w-5">
-                        {i + 1}
-                      </span>
-                      <span className="font-medium text-sm">{b.id}</span>
-                      <Badge variant="outline" className="text-[10px]">
-                        {b.type}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {b.region}
-                      </Badge>
-                    </div>
-                    <span className="text-sm font-semibold">
-                      {b.quantity.toFixed(2)} Qt
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Buyer Records</CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-auto max-h-64">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Region</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Last Txn</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayBuyers.map((b) => (
-                    <TableRow key={`${b.id}-${b.type}`}>
-                      <TableCell className="font-medium">{b.id}</TableCell>
-                      <TableCell>
-                        <span className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground">
-                          {b.type}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs">{b.region}</TableCell>
-                      <TableCell className="font-medium">
-                        {b.quantity.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {b.lastTransaction}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };
 
 export default Dashboard;
-
