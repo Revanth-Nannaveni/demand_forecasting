@@ -351,24 +351,247 @@ const DataSources: React.FC = () => {
     setAuthParams((p) => ({ ...p, [key]: val }));
   };
 
+  // const handleAuth = async () => {
+  //   setAuthing(true);
+  //   setAuthError(null);
+  //   try {
+  //     await new Promise((r) => setTimeout(r, 1200));
+  //     setAuthed(true);
+  //     // Advance to step 2 for sources that have a browser
+  //     if (modalSrc?.id !== "local") {
+  //       setTimeout(() => setModalStep(2), 300);
+  //     } else {
+  //       setModalStep(2);
+  //     }
+  //   } catch (e: any) {
+  //     setAuthError(e.message || "Authentication failed");
+  //   } finally {
+  //     setAuthing(false);
+  //   }
+  // };
+  // const handleAuth = async () => {
+  //   setAuthing(true);
+  //   setAuthError(null);
+  //   try {
+  //     if (modalSrc?.id === "s3") {
+  //     //   if (!authParams.ak || !authParams.sk) {
+  //     //     throw new Error("Access key ID and Secret access key are required.");
+  //     //   }
+  //     //   const res = await fetch(`${API_BASE}/sources/s3/buckets`, {
+  //     //     method: "POST",
+  //     //     headers: { "Content-Type": "application/json" },
+  //     //     body: JSON.stringify({
+  //     //       access_key: authParams.ak,
+  //     //       secret_key: authParams.sk,
+  //     //       region: authParams.region || "ap-south-1",
+  //     //     }),
+  //     //   });
+  //     //   if (!res.ok) {
+  //     //     const err = await res.json().catch(() => ({}));
+  //     //     throw new Error(err.detail || "S3 authentication failed.");
+  //     //   }
+      
+  //       if (!authParams.ak || !authParams.sk) {
+  //         throw new Error("Access key ID and Secret access key are required.");
+  //       }
+  //       const res = await fetch(`${API_BASE}/sources/s3/buckets`, {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({
+  //           access_key: authParams.ak,
+  //           secret_key: authParams.sk,
+  //           region: authParams.region || "ap-south-1",
+  //         }),
+  //       });
+  //       console.log("S3 auth response status:", res.status); // ← add
+  //       if (!res.ok) {
+  //         const err = await res.json().catch(() => ({}));
+  //         console.log("S3 auth error:", err); // ← add
+  //         throw new Error(err.detail || "S3 authentication failed.");
+  //       }
+
+  //     } else if (modalSrc?.id === "adls") {
+  //       if (!authParams.connstr) {
+  //         throw new Error("Connection string is required.");
+  //       }
+  //       const res = await fetch(`${API_BASE}/sources/adls/containers`, {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({ connection_string: authParams.connstr }),
+  //       });
+  //       if (!res.ok) {
+  //         const err = await res.json().catch(() => ({}));
+  //         throw new Error(err.detail || "ADLS authentication failed.");
+  //       }
+
+  //     } else if (modalSrc?.id === "onelake") {
+  //       if (!authParams.tid || !authParams.cid || !authParams.csec) {
+  //         throw new Error("Tenant ID, Client ID and Client Secret are required.");
+  //       }
+  //       const res = await fetch(`${API_BASE}/sources/onelake/workspaces`, {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({
+  //           tenant_id: authParams.tid,
+  //           client_id: authParams.cid,
+  //           client_secret: authParams.csec,
+  //           workspace_id: "00000000-0000-0000-0000-000000000000",
+  //         }),
+  //       });
+  //       if (!res.ok) {
+  //         const err = await res.json().catch(() => ({}));
+  //         throw new Error(err.detail || "OneLake authentication failed.");
+  //       }
+
+  //     } else {
+  //       // stub sources — just simulate
+  //       await new Promise((r) => setTimeout(r, 1200));
+  //     }
+
+  //     setAuthed(true);
+  //     if (modalSrc?.id !== "local") {
+  //       setTimeout(() => setModalStep(2), 300);
+  //     } else {
+  //       setModalStep(2);
+  //     }
+  //   } catch (e: any) {
+  //     setAuthError(e.message || "Authentication failed");
+  //   } finally {
+  //     setAuthing(false);
+  //   }
+  // };
+
   const handleAuth = async () => {
     setAuthing(true);
     setAuthError(null);
     try {
-      await new Promise((r) => setTimeout(r, 1200));
+      if (modalSrc?.id === "s3") {
+        if (!authParams.ak || !authParams.sk) {
+          throw new Error("Please enter both Access Key ID and Secret Access Key.");
+        }
+        const res = await fetch(`${API_BASE}/sources/s3/buckets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            access_key: authParams.ak,
+            secret_key: authParams.sk,
+            region: authParams.region || "ap-south-1",
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          const detail = err.detail || "";
+          // ← friendly messages based on AWS error type
+          if (detail.includes("InvalidAccessKeyId"))
+            throw new Error("Invalid Access Key ID. Please check and try again.");
+          if (detail.includes("SignatureDoesNotMatch"))
+            throw new Error("Invalid Secret Access Key. Please check and try again.");
+          if (detail.includes("AccessDenied"))
+            throw new Error("Access denied. This key doesn't have permission to list buckets.");
+          if (detail.includes("NoSuchBucket"))
+            throw new Error("Bucket not found. Check your region and bucket name.");
+          throw new Error("S3 authentication failed. Please check your credentials.");
+        }
+
+      } else if (modalSrc?.id === "adls") {
+        if (!authParams.connstr) {
+          throw new Error("Please enter the Connection String.");
+        }
+        const res = await fetch(`${API_BASE}/sources/adls/containers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connection_string: authParams.connstr }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          const detail = err.detail || "";
+          if (detail.includes("AuthenticationFailed"))
+            throw new Error("Authentication failed. Please check your connection string.");
+          if (detail.includes("AccountNameInvalid") || detail.includes("InvalidUri"))
+            throw new Error("Invalid connection string format. Please check and try again.");
+          throw new Error("ADLS authentication failed. Please check your connection string.");
+        }
+
+      // } else if (modalSrc?.id === "onelake") {
+      //   if (!authParams.tid || !authParams.cid || !authParams.csec) {
+      //     throw new Error("Please enter Tenant ID, Client ID and Client Secret.");
+      //   }
+      //   const res = await fetch(`${API_BASE}/sources/onelake/workspaces`, {
+      //     method: "POST",
+      //     headers: { "Content-Type": "application/json" },
+      //     body: JSON.stringify({
+      //       tenant_id: authParams.tid,
+      //       client_id: authParams.cid,
+      //       client_secret: authParams.csec,
+      //       workspace_id: "00000000-0000-0000-0000-000000000000",
+      //     }),
+      //   });
+      //   if (!res.ok) {
+      //     const err = await res.json().catch(() => ({}));
+      //     const detail = err.detail || "";
+      //     if (detail.includes("401") || detail.includes("Unauthorized"))
+      //       throw new Error("Invalid credentials. Please check Tenant ID, Client ID and Secret.");
+      //     if (detail.includes("403") || detail.includes("Forbidden"))
+      //       throw new Error("Access denied. This service principal doesn't have workspace access.");
+      //     throw new Error("OneLake authentication failed. Please check your credentials.");
+      //   }
+      } else if (modalSrc?.id === "onelake") {
+        if (!authParams.tid || !authParams.cid || !authParams.csec) {
+          throw new Error("Please enter Tenant ID, Client ID and Client Secret.");
+        }
+        
+        let res: Response;
+        try {
+          res = await fetch(`${API_BASE}/sources/onelake/workspaces`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tenant_id: authParams.tid,
+              client_id: authParams.cid,
+              client_secret: authParams.csec,
+              workspace_id: "00000000-0000-0000-0000-000000000000",
+            }),
+          });
+        } catch (networkErr) {
+          // fetch itself failed — backend down or CORS
+          throw new Error("Unable to reach the server. Please check your network or try again.");
+        }
+
+        if (!res.ok) {
+          let detail = "";
+          try {
+            const err = await res.json();
+            detail = err.detail || "";
+          } catch {
+            detail = await res.text().catch(() => "");
+          }
+          if (detail.includes("401") || detail.includes("Unauthorized") || detail.includes("invalid_client"))
+            throw new Error("Invalid credentials. Please check your Tenant ID, Client ID and Client Secret.");
+          if (detail.includes("403") || detail.includes("Forbidden"))
+            throw new Error("Access denied. This service principal doesn't have workspace access.");
+          if (detail.includes("AADSTS"))
+            throw new Error("Azure AD authentication failed. Please verify your credentials.");
+          throw new Error("OneLake authentication failed. Please check your credentials.");
+        }
+      }
+
+      // } else {
+      //   await new Promise((r) => setTimeout(r, 1200));
+      // }
+
       setAuthed(true);
-      // Advance to step 2 for sources that have a browser
       if (modalSrc?.id !== "local") {
         setTimeout(() => setModalStep(2), 300);
       } else {
         setModalStep(2);
       }
     } catch (e: any) {
-      setAuthError(e.message || "Authentication failed");
+      setAuthError(e.message || "Authentication failed.");
     } finally {
       setAuthing(false);
     }
   };
+
 
   const handleSelectionChange = useCallback((items: SelectedItem[]) => {
     setSelected(items);
