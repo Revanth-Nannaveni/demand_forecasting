@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 
 // const API_BASE = "http://localhost:8000";
-const API_BASE = "http://65.0.54.48:8000";
+// const API_BASE = "http://65.0.54.48:8000";
+const API_BASE = "https://d2m11qgy1b40kt.cloudfront.net";
 
 // ── Source definitions ────────────────────────────────────────────────────────
 

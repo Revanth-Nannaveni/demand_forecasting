@@ -110,7 +110,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
       setFetchError(null);
       try {
         const res = await fetch(
-          "http://65.0.54.48:8000/dashboard/data/onelake?buyer_table=buyers&seller_table=sellers"
+          "https://d2m11qgy1b40kt.cloudfront.net/dashboard/data/onelake?buyer_table=buyers&seller_table=sellers"
         );
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
