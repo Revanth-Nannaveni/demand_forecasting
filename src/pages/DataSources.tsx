@@ -291,7 +291,7 @@ const DataSources: React.FC = () => {
   // const { setData, setActiveSource } = useData();
 
   //credentials
-  const { setData, setActiveSource, setActiveCredentials } = useData();
+  const { setData, setActiveSource, setActiveCredentials, setLocalFiles } = useData();
 
   // Modal state
   const [modalSrc, setModalSrc] = useState<SourceDef | null>(null);
@@ -637,7 +637,8 @@ const DataSources: React.FC = () => {
         // setData(data);
         // setActiveSource("local");
         data = await res.json();
-        setActiveCredentials(null); // ← local has no credentials for forecast
+        setActiveCredentials({ data_source: "local", credentials: {} });
+        setLocalFiles({ buyer: buyerFile, seller: sellerFile });
         setData(data);
         setActiveSource("local");
 

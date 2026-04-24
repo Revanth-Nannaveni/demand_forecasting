@@ -688,7 +688,7 @@ interface ChartDataPoint {
 const Forecasting = () => {
   const navigate = useNavigate();
 
-  const { activeCredentials } = useData();
+  const { activeCredentials, localFiles  } = useData();
 
   // API states
   const [metadata, setMetadata] = useState<any>(null);
@@ -709,14 +709,21 @@ const Forecasting = () => {
   const [showResults, setShowResults] = useState(false);
 
   // Fetch metadata on mount
+
   // useEffect(() => {
+  //   console.log("activeCredentials:", JSON.stringify(activeCredentials, null, 2));
   //   const fetchMetadata = async () => {
+  //     if (!activeCredentials) {
+  //       setLoadingMetadata(false);
+  //       return;
+  //     }
   //     try {
   //       const response = await fetch(
   //         "https://d2m11qgy1b40kt.cloudfront.net/metadata",
   //         {
-  //           method: "GET",
-  //           headers: { Accept: "application/json" },
+  //           method: "POST", // ← change from GET to POST
+  //           headers: { "Content-Type": "application/json" },
+  //           body: JSON.stringify(activeCredentials), // ← send credentials
   //         }
   //       );
   //       if (!response.ok) throw new Error("Failed to fetch metadata");
@@ -735,24 +742,88 @@ const Forecasting = () => {
   //   };
 
   //   fetchMetadata();
-  // }, []);
+  // }, [activeCredentials]); // ← re-fetch when source changes
+  // useEffect(() => {
+  //   const fetchMetadata = async () => {
+  //     setLoadingMetadata(true);
+  //     try {
+  //       const isDefaultOneLake =
+  //         activeCredentials?.data_source === "onelake" &&
+  //         Object.keys(activeCredentials?.credentials ?? {}).length === 0;
+
+  //       const isLocal = activeCredentials?.data_source === "local";
+
+  //       let response;
+
+  //       if (isLocal) {
+  //         const fd = new FormData();
+  //         fd.append("buyers_file", localFiles.buyer!);
+  //         fd.append("sellers_file", localFiles.seller!);
+
+  //         response = await fetch(
+  //           "https://d2m11qgy1b40kt.cloudfront.net/metadata/local",
+  //           { method: "POST", body: fd }
+  //         );
+  //       } else if (isDefaultOneLake) {
+  //         response = await fetch(
+  //           "https://d2m11qgy1b40kt.cloudfront.net/metadata",
+  //           { method: "GET", headers: { Accept: "application/json" } }
+  //         );
+  //       } else {
+  //         response = await fetch(
+  //           "https://d2m11qgy1b40kt.cloudfront.net/metadata",
+  //           {
+  //             method: "POST",
+  //             headers: { "Content-Type": "application/json" },
+  //             body: JSON.stringify(activeCredentials),
+  //           }
+  //         );
+  //       }
+
+  //       if (!response.ok) throw new Error("Failed to fetch metadata");
+  //       const data = await response.json();
+  //       setMetadata(data);
+  //     } catch (error) {
+  //       console.error("Metadata fetch error:", error);
+  //       toast({
+  //         title: "Error",
+  //         description: "Failed to load metadata. Using fallback options.",
+  //         variant: "destructive",
+  //       });
+  //     } finally {
+  //       setLoadingMetadata(false);
+  //     }
+  //   };
+
+  //   fetchMetadata();
+  // }, [activeCredentials]);
 
   useEffect(() => {
-    console.log("activeCredentials:", JSON.stringify(activeCredentials, null, 2));
     const fetchMetadata = async () => {
-      if (!activeCredentials) {
-        setLoadingMetadata(false);
-        return;
-      }
+      setLoadingMetadata(true);
       try {
-        const response = await fetch(
-          "https://d2m11qgy1b40kt.cloudfront.net/metadata",
-          {
-            method: "POST", // ← change from GET to POST
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(activeCredentials), // ← send credentials
-          }
-        );
+        let response;
+
+        if (activeCredentials?.data_source === "local") {
+          const fd = new FormData();
+          fd.append("buyers_file", localFiles.buyer!);
+          fd.append("sellers_file", localFiles.seller!);
+
+          response = await fetch(
+            "https://d2m11qgy1b40kt.cloudfront.net/metadata/local",
+            { method: "POST", body: fd }
+          );
+        } else {
+          response = await fetch(
+            "https://d2m11qgy1b40kt.cloudfront.net/metadata",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(activeCredentials),
+            }
+          );
+        }
+
         if (!response.ok) throw new Error("Failed to fetch metadata");
         const data = await response.json();
         setMetadata(data);
@@ -769,7 +840,7 @@ const Forecasting = () => {
     };
 
     fetchMetadata();
-  }, [activeCredentials]); // ← re-fetch when source changes
+  }, [activeCredentials]);
 
   // Derived options from metadata
   const commodities = useMemo(() => metadata?.commodities || [], [metadata]);
@@ -801,6 +872,85 @@ const Forecasting = () => {
   );
 
   // Run forecast API call with better error handling
+  // const handleForecast = async () => {
+  //   if (!canRun) return;
+
+  //   setLoading(true);
+  //   setShowResults(false);
+  //   setForecastResult(null);
+  //   setErrorMessage("");
+
+  //   try {
+  //     // const payload = {
+  //     //   entity_id: entity,
+  //     //   role: role.toLowerCase(),
+  //     //   commodity: commodity,
+  //     //   type: type,
+  //     //   year: parseInt(year),
+  //     //   quarter: quarter,
+  //     //   region: region,
+  //     // };
+
+  //     const payload = {
+  //       entity_id: entity,
+  //       role: role.toLowerCase(),
+  //       commodity: commodity,
+  //       type: type,
+  //       year: parseInt(year),
+  //       quarter: quarter,
+  //       region: region,
+  //       ...activeCredentials, // ← spread data_source and credentials
+  //     };
+
+  //     const response = await fetch(
+  //       "https://d2m11qgy1b40kt.cloudfront.net/forecast",
+  //       {
+  //         method: "POST",
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //           Accept: "application/json",
+  //         },
+  //         body: JSON.stringify(payload),
+  //       }
+  //     );
+
+  //     if (!response.ok) {
+  //       if (response.status === 404) {
+  //         setErrorMessage("No forecast data found for the selected parameters.");
+  //         return;
+  //       }
+  //       throw new Error(`HTTP error! status: ${response.status}`);
+  //     }
+
+  //     const data = await response.json();
+
+  //     // Additional check if data is empty or invalid
+  //     if (!data || Object.keys(data).length === 0) {
+  //       setErrorMessage("No forecast data available for the selected parameters.");
+  //       return;
+  //     }
+
+  //     setForecastResult(data);
+  //     setShowResults(true);
+  //   } catch (error: any) {
+  //     console.error("Forecast error:", error);
+  //     const message = error.message?.includes("404") 
+  //       ? "No forecast data found for the selected parameters."
+  //       : (error.message || "Unable to generate forecast. Please try again.");
+      
+  //     setErrorMessage(message);
+      
+  //     toast({
+  //       title: "Forecast Failed",
+  //       description: message,
+  //       variant: "destructive",
+  //     });
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  //added local and datasources endponits
   const handleForecast = async () => {
     if (!canRun) return;
 
@@ -810,38 +960,52 @@ const Forecasting = () => {
     setErrorMessage("");
 
     try {
-      // const payload = {
-      //   entity_id: entity,
-      //   role: role.toLowerCase(),
-      //   commodity: commodity,
-      //   type: type,
-      //   year: parseInt(year),
-      //   quarter: quarter,
-      //   region: region,
-      // };
+      const isDefaultOneLake =
+        activeCredentials?.data_source === "onelake" &&
+        Object.keys(activeCredentials?.credentials ?? {}).length === 0;
 
-      const payload = {
-        entity_id: entity,
-        role: role.toLowerCase(),
-        commodity: commodity,
-        type: type,
-        year: parseInt(year),
-        quarter: quarter,
-        region: region,
-        ...activeCredentials, // ← spread data_source and credentials
-      };
+      const isLocal = activeCredentials?.data_source === "local";
 
-      const response = await fetch(
-        "https://d2m11qgy1b40kt.cloudfront.net/forecast",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
+      let response;
+
+      if (isLocal) {
+        const fd = new FormData();
+        fd.append("entity_id", entity);
+        fd.append("role", role.toLowerCase());
+        fd.append("commodity", commodity);
+        fd.append("type", type);
+        fd.append("year", year);
+        fd.append("quarter", quarter);
+        fd.append("region", region);
+        fd.append("buyers_file", localFiles.buyer!);
+        fd.append("sellers_file", localFiles.seller!);
+
+        response = await fetch(
+          "https://d2m11qgy1b40kt.cloudfront.net/forecast/local",
+          { method: "POST", body: fd }
+        );
+      } else {
+        const payload = {
+          entity_id: entity,
+          role: role.toLowerCase(),
+          commodity,
+          type,
+          year: parseInt(year),
+          quarter,
+          region,
+          // ...(isDefaultOneLake ? {} : activeCredentials),
+          ...activeCredentials,
+        };
+
+        response = await fetch(
+          "https://d2m11qgy1b40kt.cloudfront.net/forecast",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+      }
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -853,7 +1017,6 @@ const Forecasting = () => {
 
       const data = await response.json();
 
-      // Additional check if data is empty or invalid
       if (!data || Object.keys(data).length === 0) {
         setErrorMessage("No forecast data available for the selected parameters.");
         return;
@@ -863,12 +1026,12 @@ const Forecasting = () => {
       setShowResults(true);
     } catch (error: any) {
       console.error("Forecast error:", error);
-      const message = error.message?.includes("404") 
+      const message = error.message?.includes("404")
         ? "No forecast data found for the selected parameters."
         : (error.message || "Unable to generate forecast. Please try again.");
-      
+
       setErrorMessage(message);
-      
+
       toast({
         title: "Forecast Failed",
         description: message,
@@ -878,6 +1041,7 @@ const Forecasting = () => {
       setLoading(false);
     }
   };
+
 
   // Prepare chart data
   const chartData = useMemo((): ChartDataPoint[] => {
