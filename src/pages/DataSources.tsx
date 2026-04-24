@@ -287,7 +287,10 @@ const StepPills: React.FC<{ step: 1 | 2 }> = ({ step }) => (
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 const DataSources: React.FC = () => {
-  const { setData, setActiveSource } = useData();
+  // const { setData, setActiveSource } = useData();
+
+  //credentials
+  const { setData, setActiveSource, setActiveCredentials } = useData();
 
   // Modal state
   const [modalSrc, setModalSrc] = useState<SourceDef | null>(null);
@@ -629,7 +632,11 @@ const DataSources: React.FC = () => {
         fd.append("seller_file", sellerFile);
         const res = await fetch(`${API_BASE}/dashboard/data/local`, { method: "POST", body: fd });
         if (!res.ok) throw new Error((await res.json()).detail || "Upload failed");
+        // data = await res.json();
+        // setData(data);
+        // setActiveSource("local");
         data = await res.json();
+        setActiveCredentials(null); // ← local has no credentials for forecast
         setData(data);
         setActiveSource("local");
 
@@ -651,8 +658,22 @@ const DataSources: React.FC = () => {
         fd.append("seller_secret_key", authParams.sk || "");
         const res = await fetch(`${API_BASE}/dashboard/data/s3`, { method: "POST", body: fd });
         if (!res.ok) throw new Error((await res.json()).detail || "S3 fetch failed");
+        // data = await res.json();
+        // setData(data); setActiveSource("s3");
         data = await res.json();
-        setData(data); setActiveSource("s3");
+        setActiveCredentials({
+          data_source: "s3",
+          credentials: {
+            accessKeyId: authParams.ak || "",
+            secretAccessKey: authParams.sk || "",
+            region: authParams.region || "ap-south-1",
+            bucket: bBucket,
+            buyers_key: bKey,
+            sellers_key: sKey,
+          },
+        });
+        setData(data);
+        setActiveSource("s3");
 
       } else if (modalSrc.id === "adls") {
         const [buyerItem, sellerItem] = effectiveSelection;
@@ -674,8 +695,21 @@ const DataSources: React.FC = () => {
         fd.append("seller_connection_string", authParams.connstr || "");
         const res = await fetch(`${API_BASE}/dashboard/data/adls`, { method: "POST", body: fd });
         if (!res.ok) throw new Error((await res.json()).detail || "ADLS fetch failed");
+        // data = await res.json();
+        // setData(data); setActiveSource("adls");
         data = await res.json();
-        setData(data); setActiveSource("adls");
+        setActiveCredentials({
+          data_source: "adls",
+          credentials: {
+            connection_string: authParams.connstr || "",
+            container: bp.container,
+            folder: bp.path.split("/")[0],
+            buyers_file: bp.path.split("/").pop(),
+            sellers_file: sp.path.split("/").pop(),
+          },
+        });
+        setData(data);
+        setActiveSource("adls");
 
       } else if (modalSrc.id === "onelake") {
         const buyerItem = effectiveSelection.find((s) => s.role === "buyer") ?? effectiveSelection[0];
@@ -694,8 +728,26 @@ const DataSources: React.FC = () => {
         });
         const res = await fetch(`${API_BASE}/dashboard/data/onelake/custom?${params}`);
         if (!res.ok) throw new Error((await res.json()).detail || "OneLake fetch failed");
+        // data = await res.json();
+        // setData(data); setActiveSource("onelake_custom");
+
         data = await res.json();
-        setData(data); setActiveSource("onelake_custom");
+        setActiveCredentials({
+          data_source: "onelake",
+          credentials: {
+            tenant_id: authParams.tid || "",
+            client_id: authParams.cid || "",
+            client_secret: authParams.csec || "",
+            workspace_name: "demand_forecasting",
+            lakehouse_name: "uploaded_files.lakehouse",
+            datasets: {
+              buyers: { path: "Files/uploads/buyer/" },
+              sellers: { path: "Files/uploads/seller/" },
+            },
+          },
+        });
+        setData(data);
+        setActiveSource("onelake_custom");
       }
 
       setConnected(true);

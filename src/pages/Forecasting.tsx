@@ -677,6 +677,7 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
+import { useData } from "@/context/DataContext";
 
 interface ChartDataPoint {
   period: string;
@@ -686,6 +687,8 @@ interface ChartDataPoint {
 
 const Forecasting = () => {
   const navigate = useNavigate();
+
+  const { activeCredentials } = useData();
 
   // API states
   const [metadata, setMetadata] = useState<any>(null);
@@ -706,14 +709,48 @@ const Forecasting = () => {
   const [showResults, setShowResults] = useState(false);
 
   // Fetch metadata on mount
+  // useEffect(() => {
+  //   const fetchMetadata = async () => {
+  //     try {
+  //       const response = await fetch(
+  //         "https://d2m11qgy1b40kt.cloudfront.net/metadata",
+  //         {
+  //           method: "GET",
+  //           headers: { Accept: "application/json" },
+  //         }
+  //       );
+  //       if (!response.ok) throw new Error("Failed to fetch metadata");
+  //       const data = await response.json();
+  //       setMetadata(data);
+  //     } catch (error) {
+  //       console.error("Metadata fetch error:", error);
+  //       toast({
+  //         title: "Error",
+  //         description: "Failed to load metadata. Using fallback options.",
+  //         variant: "destructive",
+  //       });
+  //     } finally {
+  //       setLoadingMetadata(false);
+  //     }
+  //   };
+
+  //   fetchMetadata();
+  // }, []);
+
   useEffect(() => {
+    console.log("activeCredentials:", JSON.stringify(activeCredentials, null, 2));
     const fetchMetadata = async () => {
+      if (!activeCredentials) {
+        setLoadingMetadata(false);
+        return;
+      }
       try {
         const response = await fetch(
           "https://d2m11qgy1b40kt.cloudfront.net/metadata",
           {
-            method: "GET",
-            headers: { Accept: "application/json" },
+            method: "POST", // ← change from GET to POST
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(activeCredentials), // ← send credentials
           }
         );
         if (!response.ok) throw new Error("Failed to fetch metadata");
@@ -732,7 +769,7 @@ const Forecasting = () => {
     };
 
     fetchMetadata();
-  }, []);
+  }, [activeCredentials]); // ← re-fetch when source changes
 
   // Derived options from metadata
   const commodities = useMemo(() => metadata?.commodities || [], [metadata]);
@@ -773,6 +810,16 @@ const Forecasting = () => {
     setErrorMessage("");
 
     try {
+      // const payload = {
+      //   entity_id: entity,
+      //   role: role.toLowerCase(),
+      //   commodity: commodity,
+      //   type: type,
+      //   year: parseInt(year),
+      //   quarter: quarter,
+      //   region: region,
+      // };
+
       const payload = {
         entity_id: entity,
         role: role.toLowerCase(),
@@ -781,6 +828,7 @@ const Forecasting = () => {
         year: parseInt(year),
         quarter: quarter,
         region: region,
+        ...activeCredentials, // ← spread data_source and credentials
       };
 
       const response = await fetch(
