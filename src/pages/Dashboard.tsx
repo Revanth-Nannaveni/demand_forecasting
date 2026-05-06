@@ -125,6 +125,10 @@ const Dashboard = () => {
   // Pull data + loading state from context (fetched at app start)
   const { data, activeSource, isLoading, fetchError } = useData();
 
+  console.log("data:", data);
+  console.log("isLoading:", isLoading);
+  console.log("fetchError:", fetchError);
+
   const [rawSellers, setRawSellers] = useState<Transaction[]>([]);
   const [rawBuyers, setRawBuyers] = useState<Transaction[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);

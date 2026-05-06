@@ -740,11 +740,11 @@ const DataSources: React.FC = () => {
             tenant_id: authParams.tid || "",
             client_id: authParams.cid || "",
             client_secret: authParams.csec || "",
-            workspace_name: "demand_forecasting",
-            lakehouse_name: "uploaded_files.lakehouse",
+            workspace_name: workspaceId,     // ← from browser selection
+            lakehouse_name: lakehouseId,     // ← from browser selection
             datasets: {
-              buyers: { path: "Files/uploads/buyer/" },
-              sellers: { path: "Files/uploads/seller/" },
+              buyers: { table: buyerTable },   // ← table, not path
+              sellers: { table: sellerTable }, // ← table, not path
             },
           },
         });
