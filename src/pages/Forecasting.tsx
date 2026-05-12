@@ -271,19 +271,36 @@ const Forecasting = () => {
       //   };
       //   handleCreatePO(payload);
       // }
+
       const summary = data?.supply_summary || {};
       const market = summary.market_supply ?? 0;
       const shortage = summary.shortage_procurement ?? 0;
 
-      if (market === 0) {
-        setErrorMessage("No supplier data available for this selection. Try changing region or type.");
-        setShowResults(false);
-        setShowPOButton(false);
-      } else if (shortage > 0) {
-        setShowPOButton(true);
-      } else {
-        setShowPOButton(false);
+      if (isBuyer) {
+        if (market === 0) {
+          setErrorMessage("No supplier data available for this selection. Try changing region or type.");
+          setShowResults(false);
+          setShowPOButton(false);
+        } else if (shortage > 0) {
+          setShowPOButton(true);
+        } else {
+          setShowPOButton(false);
+        }
       }
+// For sellers — just show results, no PO logic needed
+      // const summary = data?.supply_summary || {};
+      // const market = summary.market_supply ?? 0;
+      // const shortage = summary.shortage_procurement ?? 0;
+
+      // if (market === 0) {
+      //   setErrorMessage("No supplier data available for this selection. Try changing region or type.");
+      //   setShowResults(false);
+      //   setShowPOButton(false);
+      // } else if (shortage > 0) {
+      //   setShowPOButton(true);
+      // } else {
+      //   setShowPOButton(false);
+      // }
     } catch (error: any) {
       console.error("Forecast error:", error);
       const message = error.message?.includes("404")
