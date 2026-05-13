@@ -1,4 +1,4 @@
-import { LayoutDashboard, TrendingUp, ClipboardList, Sprout, LogOut, MessageSquare  } from "lucide-react";
+import { Database, LayoutDashboard, TrendingUp, ClipboardList, Sprout, LogOut, MessageSquare  } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { logout } from "@/hooks/useAuth"; // ✅ YOUR addition
 import { useLocation, useNavigate } from "react-router-dom";
@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 const items = [
-  { title: "Data Sources", url: "/data-sources", icon: LayoutDashboard },
+  { title: "Data Sources", url: "/data-sources", icon: Database },
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Forecasting", url: "/forecasting", icon: TrendingUp },
   { title: "PO Tracking", url: "/po-tracking", icon: ClipboardList },

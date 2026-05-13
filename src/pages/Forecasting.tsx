@@ -42,11 +42,34 @@ interface ChartDataPoint {
 const Forecasting = () => {
   const navigate = useNavigate();
 
-  const { activeCredentials, localFiles  } = useData();
+  // const { activeCredentials, localFiles  } = useData();
+
+  // const { 
+  //   activeCredentials, 
+  //   localFiles,
+  //   forecastResult,
+  //   setForecastResult,
+  //   forecastParams,
+  //   setForecastParams,
+  // } = useData();
+  const { 
+    activeCredentials, 
+    localFiles,
+    forecastResult,
+    setForecastResult,
+    forecastParams,
+    setForecastParams,
+    showResults,
+    setShowResults,
+    showPOButton,
+    setShowPOButton,
+    poResult,
+    setPoResult,
+  } = useData();
 
   // API states
   const [metadata, setMetadata] = useState<any>(null);
-  const [forecastResult, setForecastResult] = useState<any>(null);
+  // const [forecastResult, setForecastResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   // Form states
@@ -60,13 +83,13 @@ const Forecasting = () => {
 
   const [loadingMetadata, setLoadingMetadata] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+  // const [showResults, setShowResults] = useState(false);
 
-  const [poResult, setPoResult] = useState<any>(null);
+  // const [poResult, setPoResult] = useState<any>(null);
   const [poLoading, setPoLoading] = useState(false);
   const [poError, setPoError] = useState<string | null>(null);
 
-  const [showPOButton, setShowPOButton] = useState(false);
+  // const [showPOButton, setShowPOButton] = useState(false);
 
   const fetchFilters = async (overrides: Record<string, any> = {}) => {
     setLoadingMetadata(true);
@@ -158,7 +181,8 @@ const Forecasting = () => {
       : metadata.seller_ids || [];
   }, [role, metadata]);
 
-  const isBuyer = role.toLowerCase() === "buyer";
+  // const isBuyer = role.toLowerCase() === "buyer";
+  const isBuyer = (role || forecastParams?.role || "").toLowerCase() === "buyer";
 
   const canRun = !!(
     role &&
@@ -253,7 +277,10 @@ const Forecasting = () => {
         return;
       }
 
+      // setForecastResult(data);
+      // setShowResults(true);
       setForecastResult(data);
+      setForecastParams({ role, entity, commodity, region, type, quarter, year });
       setShowResults(true);
 
       // Auto-create PO if shortage exists

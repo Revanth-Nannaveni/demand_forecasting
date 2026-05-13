@@ -645,19 +645,36 @@ const Chat = () => {
       if (isLocal) {
         const fd = new FormData();
         fd.append("query", query);
-        if (localFiles?.buyer)  fd.append("buyers_file",  localFiles.buyer);
-        if (localFiles?.seller) fd.append("sellers_file", localFiles.seller);
-        res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
+        fd.append("buyers_file", localFiles.buyer!);
+        fd.append("sellers_file", localFiles.seller!);
+        res = await fetch(`${API_BASE}/chat/local`, { method: "POST", body: fd });
       } else {
         const fd = new FormData();
         fd.append("query", query);
-        if (activeCredentials?.data_source)
-          fd.append("data_source", activeCredentials.data_source);
-        if (activeCredentials?.credentials && typeof activeCredentials.credentials === "object") {
-          Object.entries(activeCredentials.credentials).forEach(([k, v]) => fd.append(k, String(v)));
-        }
         res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
       }
+      // let res: Response;
+      // if (isLocal) {
+      //   const fd = new FormData();
+      //   fd.append("query", query);
+      //   if (localFiles?.buyer)  fd.append("buyers_file",  localFiles.buyer);
+      //   if (localFiles?.seller) fd.append("sellers_file", localFiles.seller);
+      //   res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
+      //   } else {
+      //     const fd = new FormData();
+      //     fd.append("query", query);
+      //     res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
+      //   }
+      // } else {
+      //   const fd = new FormData();
+      //   fd.append("query", query);
+      //   if (activeCredentials?.data_source)
+      //     fd.append("data_source", activeCredentials.data_source);
+      //   if (activeCredentials?.credentials && typeof activeCredentials.credentials === "object") {
+      //     Object.entries(activeCredentials.credentials).forEach(([k, v]) => fd.append(k, String(v)));
+      //   }
+      //   res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
+      // }
 
       // With this:
       // const fd = new FormData();
