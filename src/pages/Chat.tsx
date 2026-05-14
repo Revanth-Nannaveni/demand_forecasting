@@ -645,14 +645,40 @@ const Chat = () => {
       if (isLocal) {
         const fd = new FormData();
         fd.append("query", query);
-        fd.append("buyers_file", localFiles.buyer!);
-        fd.append("sellers_file", localFiles.seller!);
+        if (localFiles?.buyer)  fd.append("buyers_file", localFiles.buyer);
+        if (localFiles?.seller) fd.append("sellers_file", localFiles.seller);
         res = await fetch(`${API_BASE}/chat/local`, { method: "POST", body: fd });
       } else {
-        const fd = new FormData();
-        fd.append("query", query);
-        res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
+        const body: Record<string, any> = {
+          query,
+          data_source: activeCredentials?.data_source ?? "onelake",
+          credentials: {},
+        };
+
+        const creds = activeCredentials?.credentials;
+        if (creds && typeof creds === "object" && Object.keys(creds).length > 0) {
+          body.credentials = creds;
+        }
+
+        res = await fetch(`${API_BASE}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
       }
+      // /chat endpoint
+      // let res: Response;
+      // if (isLocal) {
+      //   const fd = new FormData();
+      //   fd.append("query", query);
+      //   fd.append("buyers_file", localFiles.buyer!);
+      //   fd.append("sellers_file", localFiles.seller!);
+      //   res = await fetch(`${API_BASE}/chat/local`, { method: "POST", body: fd });
+      // } else {
+      //   const fd = new FormData();
+      //   fd.append("query", query);
+      //   res = await fetch(`${API_BASE}/chat`, { method: "POST", body: fd });
+      // }
       // let res: Response;
       // if (isLocal) {
       //   const fd = new FormData();
